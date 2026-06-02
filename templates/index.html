@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경영회의 자료 자동 취합 시스템</title>
+    <style>
+        :root {
+            --weekly-gradient: linear-gradient(135deg, #4F46E5, #8B5CF6);
+            --weekly-light: #EEF2FF;
+            --monthly-gradient: linear-gradient(135deg, #059669, #34D399);
+            --monthly-light: #ECFDF5;
+            --bg: #F8FAFC;
+            --surface: #FFFFFF;
+            --text-main: #1E293B;
+            --text-muted: #64748B;
+        }
+        body {
+            font-family: 'Segoe UI', '맑은 고딕', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: var(--surface);
+            padding: 3rem 4rem;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+            max-width: 800px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        h1 { 
+            margin-top: 0; 
+            font-size: 2.2rem; 
+            font-weight: 800; 
+            letter-spacing: -0.02em; 
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+        }
+        p.subtitle { 
+            color: var(--text-muted); 
+            font-size: 1.1rem; 
+            margin-bottom: 3rem; 
+        }
+        
+        /* Dashboard View */
+        .dashboard {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 1rem;
+            transition: all 0.4s ease;
+        }
+        .card {
+            flex: 1;
+            padding: 3rem 2rem;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background: white;
+            border: 2px solid #E2E8F0;
+            position: relative;
+            overflow: hidden;
+            z-index: 1;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .card-weekly::before { background: var(--weekly-gradient); }
+        .card-monthly::before { background: var(--monthly-gradient); }
+        
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: transparent;
+        }
+        .card:hover::before { opacity: 1; }
+        .card:hover h2, .card:hover p { color: white; }
+        
+        .card .icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+        .card:hover .icon { transform: scale(1.1); }
+        
+        .card h2 {
+            font-size: 1.6rem;
+            margin: 0 0 1rem 0;
+            color: var(--text-main);
+            transition: color 0.3s ease;
+        }
+        .card p {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.5;
+            transition: color 0.3s ease;
+        }
+
+        /* Upload View */
+        .upload-section {
+            display: none;
+            animation: fadeIn 0.4s ease forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .btn-back {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            transition: background 0.2s ease;
+        }
+        .btn-back:hover { background: #F1F5F9; color: var(--text-main); }
+        
+        .upload-title {
+            font-size: 1.8rem;
+            margin-bottom: 2rem;
+        }
+        .upload-title span {
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent; 
+        }
+        .title-weekly span { background-image: var(--weekly-gradient); }
+        .title-monthly span { background-image: var(--monthly-gradient); }
+
+        .upload-area {
+            border: 2px dashed #CBD5E1;
+            padding: 4rem 2rem;
+            border-radius: 16px;
+            background-color: #F8FAFC;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        .upload-area.theme-weekly:hover { border-color: #4F46E5; background-color: var(--weekly-light); }
+        .upload-area.theme-monthly:hover { border-color: #059669; background-color: var(--monthly-light); }
+        
+        .upload-area input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        
+        .btn-submit {
+            color: white;
+            border: none;
+            padding: 1.2rem 2rem;
+            border-radius: 12px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn-weekly { background: var(--weekly-gradient); }
+        .btn-weekly:hover { box-shadow: 0 8px 15px rgba(79, 70, 229, 0.3); transform: translateY(-2px); }
+        
+        .btn-monthly { background: var(--monthly-gradient); }
+        .btn-monthly:hover { box-shadow: 0 8px 15px rgba(5, 150, 105, 0.3); transform: translateY(-2px); }
+        
+        .alert {
+            padding: 1.2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            text-align: left;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        .alert-success { background-color: #DEF7EC; color: #03543F; border: 1px solid #31C48D; }
+        .alert-danger { background-color: #FDE8E8; color: #9B1C1C; border: 1px solid #F8B4B4; }
+        .alert-warning { background-color: #FEF3C7; color: #92400E; border: 1px solid #F6C23E; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📑 경영회의 자료 취합 시스템</h1>
+        <p class="subtitle" id="main-subtitle">작업하실 회의 유형을 선택해주세요.</p>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">
+                 {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <!-- Dashboard View (Cards) -->
+        <div id="dashboard-view" class="dashboard">
+            <div class="card card-monthly" onclick="selectType('monthly')">
+                <div class="icon">🟩</div>
+                <h2>월간 경영회의</h2>
+                <p>매월 첫째 주에 진행되는<br>월간 보고서를 취합합니다.</p>
+            </div>
+            <div class="card card-weekly" onclick="selectType('weekly')">
+                <div class="icon">🟦</div>
+                <h2>주간 경영회의</h2>
+                <p>매주 진행되는 각 지점의<br>경영 보고서를 취합합니다.</p>
+            </div>
+        </div>
+
+        <!-- Upload Form View -->
+        <div id="upload-view" class="upload-section">
+            <button class="btn-back" onclick="goBack()">← 다른 메뉴 선택하기</button>
+            
+            <h2 id="upload-title" class="upload-title title-weekly"><span>주간</span> 보고서 업로드</h2>
+            <p style="color:var(--text-muted); margin-bottom:2rem;">01 ~ 17번 파일들을 드래그 앤 드롭 하시면 자동으로 취합됩니다.</p>
+            
+            {% if download_ready %}
+                <div id="download-ready-block" style="margin-bottom: 2.5rem; padding: 1.5rem; background: #ECFDF5; border: 1px solid #10B981; border-radius: 12px; text-align: center;">
+                    <h3 style="color:#047857; margin-top:0; margin-bottom: 1rem;">✅ 취합이 완료되었습니다!</h3>
+                    <form action="{{ url_for('download') }}" method="get">
+                        <input type="hidden" name="type" value="{{ active_tab }}">
+                        <button type="submit" class="btn-submit btn-weekly" id="download-btn" style="margin-top:0;">⬇️ 취합 완료본 다운로드</button>
+                    </form>
+                </div>
+            {% endif %}
+            
+            <form method="POST" enctype="multipart/form-data">
+                <!-- Hidden field to pass selected report type to Flask -->
+                <input type="hidden" name="report_type" id="report_type_input" value="weekly">
+                
+                <div class="upload-area theme-weekly" id="upload-area">
+                    <div style="font-size: 3.5rem; margin-bottom:1rem;">📂</div>
+                    <div style="font-size: 1.3rem; font-weight:600; color:#374151;">이곳에 파일들을 드래그 앤 드롭</div>
+                    <div style="color:#6B7280; margin-top:0.5rem;">또는 클릭하여 파일 선택 (여러 개 동시 선택 가능)</div>
+                    <input type="file" name="branch_files" multiple accept=".doc,.docx" required id="file-input">
+                </div>
+                <div id="file-list" style="margin-top:1.5rem; text-align:left; font-size:0.95rem; color:#4B5563; max-height:150px; overflow-y:auto; padding:1rem; border-radius:8px; background:#F1F5F9; display:none;"></div>
+                <button type="submit" class="btn-submit btn-weekly" id="submit-btn">자동 취합 시작하기</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const dashboardView = document.getElementById('dashboard-view');
+        const uploadView = document.getElementById('upload-view');
+        const subtitle = document.getElementById('main-subtitle');
+        const uploadTitle = document.getElementById('upload-title');
+        const reportTypeInput = document.getElementById('report_type_input');
+        const uploadArea = document.getElementById('upload-area');
+        const submitBtn = document.getElementById('submit-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const dlBlock = document.getElementById('download-ready-block');
+        
+        const input = document.getElementById('file-input');
+        const list = document.getElementById('file-list');
+
+        // Flask에서 넘어온 active_tab 값 (새로고침 시 해당 탭 유지)
+        const activeTab = "{{ active_tab or '' }}";
+
+        function selectType(type) {
+            dashboardView.style.display = 'none';
+            uploadView.style.display = 'block';
+            subtitle.style.display = 'none';
+            
+            if(reportTypeInput) reportTypeInput.value = type;
+            
+            if (type === 'weekly') {
+                uploadTitle.className = 'upload-title title-weekly';
+                uploadTitle.innerHTML = '<span>주간</span> 보고서 취합 모드';
+                if(uploadArea) uploadArea.className = 'upload-area theme-weekly';
+                if(submitBtn) submitBtn.className = 'btn-submit btn-weekly';
+                if(downloadBtn) downloadBtn.className = 'btn-submit btn-weekly';
+            } else {
+                uploadTitle.className = 'upload-title title-monthly';
+                uploadTitle.innerHTML = '<span>월간</span> 보고서 취합 모드';
+                if(uploadArea) uploadArea.className = 'upload-area theme-monthly';
+                if(submitBtn) submitBtn.className = 'btn-submit btn-monthly';
+                if(downloadBtn) downloadBtn.className = 'btn-submit btn-monthly';
+            }
+        }
+
+        function goBack() {
+            uploadView.style.display = 'none';
+            dashboardView.style.display = 'flex';
+            subtitle.style.display = 'block';
+            
+            // 리셋
+            if(list) {
+                list.style.display = 'none';
+                list.innerHTML = '';
+            }
+            if(submitBtn) submitBtn.innerText = '자동 취합 시작하기';
+            
+            // 이전 완료창 및 경고창 완벽 숨김 처리
+            if(dlBlock) dlBlock.style.display = 'none';
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(a => a.style.display = 'none');
+        }
+
+        // 파일 업로드 이벤트
+        if(input) {
+            input.addEventListener('change', () => {
+                const files = input.files;
+                if (files.length > 0) {
+                    list.style.display = 'block';
+                    list.innerHTML = `<strong>${files.length}개의 파일이 선택되었습니다:</strong><br><br>` + 
+                                     Array.from(files).map(f => `• ${f.name}`).join('<br>');
+                    submitBtn.innerHTML = `💪 선택된 ${files.length}개 파일 취합 시작`;
+                } else {
+                    list.style.display = 'none';
+                    submitBtn.innerText = '자동 취합 시작하기';
+                }
+            });
+        }
+
+        // 페이지 로드 시 유지
+        if (activeTab === 'weekly' || activeTab === 'monthly') {
+            selectType(activeTab);
+        }
+    </script>
+</body>
+</html>
