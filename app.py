@@ -17,14 +17,28 @@ OUTPUT_FILE_MONTHLY = '/tmp/monthly_output.docx'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def clean_uploads():
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     try:
         subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
         time.sleep(0.5)
     except Exception:
         pass
-    for f in os.listdir(UPLOAD_FOLDER):
-        try: os.remove(os.path.join(UPLOAD_FOLDER, f))
-        except: pass
+    try:
+        for f in os.listdir(UPLOAD_FOLDER):
+            try: os.remove(os.path.join(UPLOAD_FOLDER, f))
+            except: pass
+    except Exception:
+        pass
+
+
+import traceback
+from werkzeug.exceptions import HTTPException
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    if isinstance(e, HTTPException):
+        return e
+    return f"<h1>System Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -39,6 +53,7 @@ def index():
         for file in files:
             if file.filename and not file.filename.startswith('~'):
                 clean_name = file.filename
+                os.makedirs(UPLOAD_FOLDER, exist_ok=True)
                 dest = os.path.join(UPLOAD_FOLDER, clean_name)
                 file.save(dest)
                 uploaded_count += 1
