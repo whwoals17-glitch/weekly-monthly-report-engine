@@ -184,7 +184,8 @@ def process_and_merge(template_path, upload_dir, output_path):
                         branch_files[idx] = filepath
 
     import subprocess
-    subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
+    try: subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
+    except: pass
 
     global_master_date = None
     if 0 in branch_files:

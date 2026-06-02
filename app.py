@@ -17,8 +17,11 @@ OUTPUT_FILE_MONTHLY = '/tmp/monthly_output.docx'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def clean_uploads():
-    subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
-    time.sleep(0.5)
+    try:
+        subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
+        time.sleep(0.5)
+    except Exception:
+        pass
     for f in os.listdir(UPLOAD_FOLDER):
         try: os.remove(os.path.join(UPLOAD_FOLDER, f))
         except: pass
