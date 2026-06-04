@@ -16,7 +16,7 @@ def write_exact_text_to_cell(cell, text, font_name="가는각진제목체", font
     p = cell.paragraphs[0]
     p.text = ""
     pPr = p._element.get_or_add_pPr()
-    for tag in ['w:numPr', 'w:ind', 'w:tabs', 'w:spacing']:
+    for tag in ['w:numPr', 'w:ind', 'w:tabs', 'w:spacing', 'w:pStyle']:
         elem = pPr.find(qn(tag))
         if elem is not None:
             pPr.remove(elem)

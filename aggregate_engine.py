@@ -18,7 +18,7 @@ def force_font_on_cell(cell, text=None, font_name="가는각진제목체", font_
     
     # Completely destroy any hidden list, indent, tab, or spacing formatting in the XML
     pPr = p._element.get_or_add_pPr()
-    for tag in ['w:numPr', 'w:ind', 'w:tabs', 'w:spacing']:
+    for tag in ['w:numPr', 'w:ind', 'w:tabs', 'w:spacing', 'w:pStyle']:
         elem = pPr.find(qn(tag))
         if elem is not None:
             pPr.remove(elem)
@@ -74,6 +74,58 @@ def force_font_on_cell(cell, text=None, font_name="가는각진제목체", font_
         rPr = run._element.get_or_add_rPr()
         rFonts = rPr.get_or_add_rFonts()
         rFonts.set(qn('w:eastAsia'), font_name)
+
+
+
+def flatten_numbering(doc):
+    from docx.oxml.ns import qn
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                counter = 1
+                for p in cell.paragraphs:
+                    pPr = p._element.find(qn('w:pPr'))
+                    if pPr is None: continue
+                    numPr = pPr.find(qn('w:numPr'))
+                    if numPr is None: continue
+                    
+                    numId_elem = numPr.find(qn('w:numId'))
+                    ilvl_elem = numPr.find(qn('w:ilvl'))
+                    
+                    if numId_elem is None or ilvl_elem is None: continue
+                    
+                    numId = numId_elem.get(qn('w:val'))
+                    ilvl = ilvl_elem.get(qn('w:val'))
+                    
+                    is_number = False
+                    try:
+                        numbering_part = doc.part.numbering_part
+                        if numbering_part:
+                            num = numbering_part.element.find(f'.//w:num[@w:numId="{numId}"]', numbering_part.element.nsmap)
+                            if num is not None:
+                                abstractNumId = num.find(qn('w:abstractNumId')).get(qn('w:val'))
+                                abstractNum = numbering_part.element.find(f'.//w:abstractNum[@w:abstractNumId="{abstractNumId}"]', numbering_part.element.nsmap)
+                                if abstractNum is not None:
+                                    lvl = abstractNum.find(f'.//w:lvl[@w:ilvl="{ilvl}"]', numbering_part.element.nsmap)
+                                    if lvl is not None:
+                                        numFmt = lvl.find(qn('w:numFmt')).get(qn('w:val'))
+                                        if numFmt in ['decimal', 'lowerLetter', 'upperRoman']:
+                                            is_number = True
+                    except:
+                        pass
+                        
+                    prefix = f"{counter}. " if is_number else "· "
+                    if is_number:
+                        counter += 1
+                        
+                    if len(p.runs) > 0:
+                        p.runs[0].text = prefix + p.runs[0].text
+                    else:
+                        p.add_run(prefix)
+                        
+                    # Remove numPr so it doesn't get copied as automatic numbering
+                    pPr.remove(numPr)
+
 
 def format_header_cell(cell, override_name=None, force_date=None):
     text = cell.text.strip()
@@ -191,6 +243,7 @@ def process_and_merge(template_path, upload_dir, output_path):
     if 0 in branch_files:
         try:
             t_doc = Document(branch_files[0])
+            flatten_numbering(t_doc)
             if t_doc.tables:
                 t_text = t_doc.tables[0].cell(0,0).text
                 match = re.search(r'(\d{4}\s*\.\s*\d{1,2}\s*\.\s*\d{1,2})', t_text)
@@ -206,6 +259,7 @@ def process_and_merge(template_path, upload_dir, output_path):
         filepath = branch_files[idx]
         try:
             branch_doc = Document(filepath)
+            flatten_numbering(branch_doc)
             if not branch_doc.tables:
                 continue
 

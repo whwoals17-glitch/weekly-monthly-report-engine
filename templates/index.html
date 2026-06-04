@@ -246,7 +246,7 @@
                 </div>
             {% endif %}
             
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" id="upload-form">
                 <!-- Hidden field to pass selected report type to Flask -->
                 <input type="hidden" name="report_type" id="report_type_input" value="weekly">
                 
@@ -331,6 +331,19 @@
                 } else {
                     list.style.display = 'none';
                     submitBtn.innerText = '자동 취합 시작하기';
+                }
+            });
+        }
+
+        // 폼 제출 시 로딩 상태 표시
+        const uploadForm = document.getElementById('upload-form');
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', function() {
+                if (input.files.length > 0) {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.7';
+                    submitBtn.style.cursor = 'not-allowed';
+                    submitBtn.innerHTML = '⏳ 시스템이 열심히 취합 중입니다... 잠시만 대기해주세요!';
                 }
             });
         }

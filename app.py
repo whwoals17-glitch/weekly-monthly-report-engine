@@ -50,13 +50,21 @@ def index():
         files = request.files.getlist('branch_files')
         print(f"Number of files received: {len(files)}")
         uploaded_count = 0
+        has_doc_error = False
         for file in files:
             if file.filename and not file.filename.startswith('~'):
+                if file.filename.lower().endswith('.doc'):
+                    flash(f"'{file.filename}' 파일은 구형(.doc) 포맷이라 취합할 수 없습니다. 워드에서 '다른 이름으로 저장'을 눌러 .docx 형식으로 변경 후 업로드해주세요!", "danger")
+                    has_doc_error = True
+                    continue
                 clean_name = file.filename
                 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
                 dest = os.path.join(UPLOAD_FOLDER, clean_name)
                 file.save(dest)
                 uploaded_count += 1
+                
+        if has_doc_error:
+            return redirect(request.url)
                 
         if uploaded_count == 0:
             flash("업로드된 지점 파일이 없습니다.", "warning")
