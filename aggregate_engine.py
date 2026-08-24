@@ -11,7 +11,6 @@ def force_font_on_cell(cell, text=None, font_name="가는각진제목체", font_
     """ Clears the cell and forces a clean formatting string. """
     from docx.enum.text import WD_LINE_SPACING
     if text is None: text = cell.text.strip()
-    if not text: return
         
     p = cell.paragraphs[0]
     p.text = ""
@@ -38,28 +37,52 @@ def force_font_on_cell(cell, text=None, font_name="가는각진제목체", font_
     lines = text.split('\n')
     import re
     cleaned_lines = []
+    current_indent = ""
+    bullet_indent = "  "
     for line in lines:
-        # 탭을 공백 2칸으로 변환 (들여쓰기 보존을 위해)
         line = re.sub(r'\t', '  ', line)
         
-        # 순번(1., 가. 등)으로 시작하는 줄인지 확인
-        if re.match(r'^\s*[0-9가-힣a-zA-Z]\.', line):
-            # 순번 줄은 앞의 공백을 완전히 제거 (왼쪽 정렬)
-            line = line.lstrip()
-            # 번호 매기기(예: 1., 가.) 뒤에 공백이 여러개인 경우 1칸으로 고정
-            line = re.sub(r'^([0-9가-힣a-zA-Z]\.)\s+', r'\1 ', line)
-            # 연속된 공백 축소
-            line = re.sub(r' {2,}', ' ', line)
+        # 괄호 머릿말 검사 (예: [공통]1., [T-타워] 1.)
+        prefix_match = re.match(r'^(\s*)([\[\<\(].*?[\]\>\)])(\s*)([0-9가-힣a-zA-Z]\.)', line)
+        if prefix_match:
+            bracket_part = prefix_match.group(2)
+            space_after_bracket = prefix_match.group(3)
+            width = sum(2 if ord(c) > 127 else 1 for c in bracket_part) + len(space_after_bracket)
+            current_indent = prefix_match.group(1) + (" " * width)
             line = line.rstrip()
-        else:
-            # 순번이 아닌 줄(세부 내용 등)은 오른쪽 공백만 제거하고 왼쪽(들여쓰기)은 보존
-            line = line.rstrip()
-            # 만약 '-', '※', '*' 기호로 시작하는데 왼쪽 공백이 아예 없다면 기본 2칸 들여쓰기 강제 추가
-            if re.match(r'^[-※*]', line):
-                # 단, '-' 단독이거나 '-1'처럼 마이너스 기호 뒤에 숫자만 오는 경우(인력 증감 수치)는 제외
-                if not (line.strip() == '-' or re.match(r'^-\s*\d+$', line)):
-                    line = '  ' + line
+            
+        elif re.match(r'^\s*[0-9가-힣a-zA-Z]\.', line):
+            num_match = re.match(r'^\s*([0-9가-힣a-zA-Z])\.', line)
+            if num_match and num_match.group(1) == '1':
+                current_indent = ""
                 
+            line = line.lstrip()
+            match = re.match(r'^([0-9가-힣a-zA-Z]\.)\s+(.*)', line)
+            if match:
+                num = match.group(1)
+                content = match.group(2)
+                content = re.sub(r' {2,}', ' ', content).strip()
+                line = current_indent + num + ' ' + content
+                
+                # 다음 기호(·, -, 등) 줄이 시작될 위치 계산
+                bullet_idx = line.find('·')
+                if bullet_idx != -1:
+                    prefix_up_to_bullet = line[:bullet_idx]
+                    w = sum(2 if ord(c) > 127 else 1 for c in prefix_up_to_bullet)
+                    bullet_indent = " " * w
+                else:
+                    w = sum(2 if ord(c) > 127 else 1 for c in current_indent + num + ' ')
+                    bullet_indent = " " * w
+            else:
+                line = current_indent + line
+                w = sum(2 if ord(c) > 127 else 1 for c in current_indent) + 2
+                bullet_indent = " " * w
+        else:
+            line = line.rstrip()
+            if re.match(r'^[-※*·]', line.lstrip()):
+                if not (line.strip() == '-' or re.match(r'^-\s*\d+$', line)):
+                    line = bullet_indent + line.lstrip()
+                    
         cleaned_lines.append(line)
         
     for i, line in enumerate(cleaned_lines):
@@ -809,12 +832,24 @@ def process_and_merge(template_path, upload_dir, output_path):
                     seen_cells.add(cell)
 
                     text = cell.text.strip()
+                    if current_cat_num == 1 and not is_personnel_header:
+                        if idx != 13:
+                            if text == '' or text == '-':
+                                text = '0'
+                        else:
+                            if cell_idx in [5, 6]:
+                                text = ''
+
                     if '차량실' in text and '주차' in text and '관제' in text:
                         text = text.replace(' ', '')
-                        
+
                     text_no_space = text.replace(' ', '')
                     text_no_newline = text_no_space.replace('\n', '')
                     align = None
+                    
+                    if current_cat_num == 1 and cell_idx < len(row.cells) - 1:
+                        from docx.enum.text import WD_ALIGN_PARAGRAPH
+                        align = WD_ALIGN_PARAGRAPH.CENTER
                     
                     if replace_next_with_content:
                         text = '내       용'
@@ -887,6 +922,9 @@ def process_and_merge(template_path, upload_dir, output_path):
                         text = '내       용'
                         from docx.enum.text import WD_ALIGN_PARAGRAPH
                         align = WD_ALIGN_PARAGRAPH.CENTER
+                    elif text_no_space in ['유타워', 'L7광명', '아이벡스']:
+                        from docx.enum.text import WD_ALIGN_PARAGRAPH
+                        align = WD_ALIGN_PARAGRAPH.CENTER
                     elif current_cat_num == 1 and is_personnel_header and ('행정' in text or '사무' in text or '서무' in text):
                         text = '사무지원'
                     elif current_cat_num == 1 and is_personnel_header and '안내' in text:
@@ -897,16 +935,40 @@ def process_and_merge(template_path, upload_dir, output_path):
                         if not text_no_newline:
                             text = '1. 결원 : 0명\n2. 대책 : '
 
+                    # 4. 안전문화활동 내용 중 불필요한 '안전관리' 헤더 텍스트 제거
+                    if current_cat_num == 4:
+                        text = re.sub(r'(?m)^\s*안전관리\s*\n?', '', text)
+
                     # Calculate dynamic margin for "4. 안전문화활동"
                     custom_space_pt = 8 if current_cat_num == 4 else 3
 
                     # Apply text cleanly without any bold (Rule 2, 3)
                     force_font_on_cell(cell, text, font_name="가는각진제목체", font_size_pt=10, is_bold=False, alignment=align, space_pt=custom_space_pt)
 
+            # --- Pass 3.4: KT&G Sejong (idx == 13) Border Fix ---
+            if idx == 13:
+                for tr in wrapper_table._tbl.findall(qn('w:tr')):
+                    for tcPr in tr.findall(f".//{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}}tcPr"):
+                        tcBorders = tcPr.find(qn('w:tcBorders'))
+                        if tcBorders is not None:
+                            for border in tcBorders:
+                                val = border.get(qn('w:val'))
+                                if val in ['double', 'dotted', 'dashed', 'dotDash', 'dotDotDash', 'dashSmallGap', 'dashDotStroked']:
+                                    border.set(qn('w:val'), 'single')
+
             # --- Pass 3.5: Gwangmyeong Custom Merge ---
             if idx == 12:
                 from docx.table import _Cell
                 for tr in wrapper_table._tbl.findall(qn('w:tr')):
+                    # 점선/파선을 모두 실선으로 변환
+                    for tcPr in tr.findall(f".//{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}}tcPr"):
+                        tcBorders = tcPr.find(qn('w:tcBorders'))
+                        if tcBorders is not None:
+                            for border in tcBorders:
+                                val = border.get(qn('w:val'))
+                                if val in ['dotted', 'dashed', 'dotDash', 'dotDotDash', 'dashSmallGap', 'dashDotStroked']:
+                                    border.set(qn('w:val'), 'single')
+                                    
                     tcs = tr.findall(qn('w:tc'))
                     if len(tcs) == 12:
                         # Extract text safely without invoking row.cells layout engine
