@@ -833,23 +833,26 @@ def process_and_merge(template_path, upload_dir, output_path):
 
                     text = cell.text.strip()
                     if current_cat_num == 1 and not is_personnel_header:
-                        if idx != 13:
-                            if text == '' or text == '-':
-                                text = '0'
-                        else:
-                            if cell_idx in [5, 6]:
+                        table_title = wrapper_table.rows[0].cells[0].text if len(wrapper_table.rows) > 0 else ""
+                        if text == '' or text == '-':
+                            if 'KT&G' in table_title and '세종' in table_title and cell_idx >= 5 and cell_idx < len(row.cells) - 2:
                                 text = ''
+                            else:
+                                text = '0'
 
                     if '차량실' in text and '주차' in text and '관제' in text:
                         text = text.replace(' ', '')
 
                     text_no_space = text.replace(' ', '')
                     text_no_newline = text_no_space.replace('\n', '')
-                    align = None
                     
-                    if current_cat_num == 1 and cell_idx < len(row.cells) - 1:
-                        from docx.enum.text import WD_ALIGN_PARAGRAPH
-                        align = WD_ALIGN_PARAGRAPH.CENTER
+                    align = None
+                    if current_cat_num == 1 and not is_personnel_header:
+                        table_title = wrapper_table.rows[0].cells[0].text if len(wrapper_table.rows) > 0 else ""
+                        if '종로' in table_title or '판교' in table_title:
+                            if 1 <= cell_idx < len(row.cells) - 1:
+                                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                                align = WD_ALIGN_PARAGRAPH.CENTER
                     
                     if replace_next_with_content:
                         text = '내       용'
