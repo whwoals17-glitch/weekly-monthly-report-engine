@@ -275,19 +275,53 @@ def process_and_merge(template_path, upload_dir, output_path):
         except:
             pass
 
-    for idx in range(17):
+        num_tables = len(master_doc.tables)
+    tables_to_delete = []
+    for idx in range(num_tables):
         if idx not in branch_files:
+            tables_to_delete.append(master_doc.tables[idx])
             continue
-
+        
         filepath = branch_files[idx]
         try:
             branch_doc = Document(filepath)
             flatten_numbering(branch_doc)
             if not branch_doc.tables:
                 continue
-
+            
             source_tbl = branch_doc.tables[0]._tbl
             target_tbl = master_doc.tables[idx]._tbl
+            from docx.table import Table
+            temp_wrapper = Table(target_tbl, master_doc)
+            t_title = temp_wrapper.rows[0].cells[0].text if len(temp_wrapper.rows) > 0 else ""
+            is_gwangmyeong = '광명' in t_title
+            
+            # 사용자 요청에 따라 광명 지점 양식은 항상 통째로 삭제
+            if is_gwangmyeong:
+                if master_doc.tables[idx] not in tables_to_delete:
+                    tables_to_delete.append(master_doc.tables[idx])
+                continue
+
+            is_t_tower = 'T-타워' in t_title
+            is_samhwa_2 = '삼화 2호' in t_title
+            is_jungbu = '중부' in t_title
+            is_busan = '부산' in t_title
+            is_daegu = '대구' in t_title
+            is_seobu = '서부' in t_title
+            is_jeju = '제주' in t_title
+            is_seorin = '서린' in t_title
+            is_skp = 'SK-P' in t_title or 'SK-P타워' in t_title
+            is_jongno = '종로' in t_title
+            is_samhwa = '삼화타워' in t_title
+            is_gwangmyeong = '광명' in t_title
+            is_ktg_sejong = 'KT&G' in t_title and '세종' in t_title
+            is_pangyo = '판교' in t_title
+            
+            is_gongsa_split = is_seorin or is_skp or is_jongno or is_samhwa or is_ktg_sejong
+            is_busan_daegu_seobu_jeju = is_busan or is_daegu or is_seobu or is_jeju
+            is_busan_daegu = is_busan or is_daegu
+            is_seobu_jeju = is_seobu or is_jeju
+
             
             # Get source grid column widths
             source_grid = source_tbl.find(qn('w:tblGrid'))
@@ -418,7 +452,7 @@ def process_and_merge(template_path, upload_dir, output_path):
             from docx.oxml import parse_xml
             total_grid_cols = 10
             
-            if idx == 12:
+            if is_gwangmyeong:
                 # Gwangmyeong (광명): Use 11-col grid (removed lifeguard)
                 total_grid_cols = 11
                 gwang_grid_xml = (
@@ -437,7 +471,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                     '</w:tblGrid>'
                 )
                 target_tbl.insert(0, parse_xml(gwang_grid_xml))
-            elif idx == 7:
+            elif is_seorin:
                 # Seorin (서린): Use seorin_grid with 1633 dxa (2.88cm) for Col 6
                 seorin_grid_xml = (
                     '<w:tblGrid xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -948,8 +982,8 @@ def process_and_merge(template_path, upload_dir, output_path):
                     # Apply text cleanly without any bold (Rule 2, 3)
                     force_font_on_cell(cell, text, font_name="가는각진제목체", font_size_pt=10, is_bold=False, alignment=align, space_pt=custom_space_pt)
 
-            # --- Pass 3.4: KT&G Sejong (idx == 13) Border Fix ---
-            if idx == 13:
+            # --- Pass 3.4: KT&G Sejong (is_ktg_sejong) Border Fix ---
+            if is_ktg_sejong:
                 for tr in wrapper_table._tbl.findall(qn('w:tr')):
                     for tcPr in tr.findall(f".//{{http://schemas.openxmlformats.org/wordprocessingml/2006/main}}tcPr"):
                         tcBorders = tcPr.find(qn('w:tcBorders'))
@@ -960,7 +994,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                                     border.set(qn('w:val'), 'single')
 
             # --- Pass 3.5: Gwangmyeong Custom Merge ---
-            if idx == 12:
+            if is_gwangmyeong:
                 from docx.table import _Cell
                 for tr in wrapper_table._tbl.findall(qn('w:tr')):
                     # 점선/파선을 모두 실선으로 변환
@@ -1024,10 +1058,10 @@ def process_and_merge(template_path, upload_dir, output_path):
                     if qn('w:val') in vMerge.attrib:
                         del vMerge.attrib[qn('w:val')]
 
-            # --- Jungbu (idx == 2) logic removed to respect original document rows ---
+            # --- Jungbu (is_jungbu) logic removed to respect original document rows ---
 
-            # --- Busan (idx == 3) and Daegu (idx == 4) ---
-            if idx in [3, 4, 5, 6]:
+            # --- Busan (is_busan) and Daegu (is_daegu) ---
+            if is_busan_daegu_seobu_jeju:
                 for row in wrapper_table.rows:
                     cells = row.cells
                     if len(cells) > 1 and '이슈' in cells[1].text and '기타' in cells[1].text:
@@ -1042,7 +1076,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                             content_text = _Cell(tcs_orig[2], wrapper_table).text.strip()
                             parsed_lines = []
                             
-                            if idx in [3, 4]:
+                            if is_busan_daegu:
                                 lines = content_text.split('\n')
                                 current_prefix = None
                                 current_suffix = []
@@ -1064,8 +1098,8 @@ def process_and_merge(template_path, upload_dir, output_path):
                                 if current_prefix:
                                     parsed_lines.append((current_prefix, '\n'.join(current_suffix)))
                                     
-                            elif idx in [5, 6]:
-                                if idx == 5:
+                            elif is_seobu_jeju:
+                                if is_seobu:
                                     targets = ["공통", "우산", "송정", "전주", "현대사업장 및 SK 넥실리스 사업장"]
                                 else:
                                     targets = ["공통", "제주 사옥", "오리온 제주 용암수", "제주 쉬멍"]
@@ -1169,16 +1203,15 @@ def process_and_merge(template_path, upload_dir, output_path):
                                 tr_orig.getparent().insert(tr_orig.getparent().index(tr_orig) + i, new_tr)
                         break
 
-            # --- Gongsa Section Split for Specific Branches (idx in [7, 8, 10, 11, 13]) ---
-            if idx in [7, 8, 10, 11, 13]:
-                site_names = {
-                    7: "서린",
-                    8: "판교",
-                    10: "종로타워",
-                    11: "삼화타워",
-                    13: "KT&G"
-                }
-                site_name = site_names[idx]
+            # --- Gongsa Section Split for Specific Branches (is_gongsa_split) ---
+            if is_gongsa_split:
+                site_name = ""
+                if is_seorin: site_name = "서린"
+                elif is_skp: site_name = "판교"
+                elif is_jongno: site_name = "종로타워"
+                elif is_samhwa: site_name = "삼화타워"
+                elif is_ktg_sejong: site_name = "KT&G"
+
                 
                 for row in wrapper_table.rows:
                     # Resolve unique cells to handle different grids (10-col vs 12-col)
@@ -1224,9 +1257,9 @@ def process_and_merge(template_path, upload_dir, output_path):
                     span = 1
                     
                     if num_cells == 4:
-                        if i == 2 and not (idx == 12 and "인력현황" in ''.join(row_xml.itertext())):
+                        if i == 2 and not (is_gwangmyeong and "인력현황" in ''.join(row_xml.itertext())):
                             span = 2
-                        elif idx == 12 and i == 2 and "인력현황" in ''.join(row_xml.itertext()):
+                        elif is_gwangmyeong and i == 2 and "인력현황" in ''.join(row_xml.itertext()):
                             span = 8
                     elif num_cells == 2:
                         if i == 0: span = 2
@@ -1238,9 +1271,9 @@ def process_and_merge(template_path, upload_dir, output_path):
                         
                     # Calculate EXACT width from grid column definitions to prevent any proportional resizing
                     grid_col_widths = [567, 993, 862, 862, 862, 862, 862, 862, 862, 7574]
-                    if idx == 7: # Seorin
+                    if is_seorin: # Seorin
                         grid_col_widths = [567, 993, 862, 862, 862, 862, 1633, 862, 862, 6803]
-                    elif idx == 12: # Gwangmyeong
+                    elif is_gwangmyeong: # Gwangmyeong
                         grid_col_widths = [567, 993, 862, 862, 862, 862, 862, 862, 862, 862, 6712]
                         
                     # Ensure we don't index out of bounds
@@ -1280,6 +1313,9 @@ def process_and_merge(template_path, upload_dir, output_path):
             traceback.print_exc()
 
     # --- Pass 5: Clean empty paras and ensure page breaks (No blank page at end) ---
+    for t in tables_to_delete:
+        t._element.getparent().remove(t._element)
+
     body = master_doc.element.body
     for p in list(body.findall(qn('w:p'))):
         if not p.xpath('.//w:t'):

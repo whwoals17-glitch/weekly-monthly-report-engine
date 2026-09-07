@@ -189,8 +189,18 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
             print(f"동적 헤더 업데이트 중 오류 발생 (무시됨): {e}")
     # -----------------------------------------
     
-    for idx in range(17):
+    num_branches = len(master_doc.tables) // 2
+    elements_to_delete = []
+
+    for idx in range(num_branches):
         branch_num_str = f"{idx + 1:02d}"
+        
+        master_tables = [master_doc.tables[idx * 2], master_doc.tables[idx * 2 + 1]]
+        
+        t_title_elem = master_tables[0]._element.getprevious().getprevious()
+        t_title = ''.join(t_title_elem.itertext()) if t_title_elem is not None else ""
+        
+        is_gwangmyeong = '광명' in t_title
         
         target_file = None
         for f in os.listdir(upload_folder):
@@ -198,15 +208,27 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
                 target_file = os.path.join(upload_folder, f)
                 break
                 
-        if not target_file:
-            print(f"[{branch_num_str} 지점] 파일 없음. 템플릿 기본값 유지.")
+        if is_gwangmyeong or not target_file:
+            if not target_file:
+                print(f"[{branch_num_str} 호] 파일 없음. 양식 삭제.")
+            else:
+                print(f"[{branch_num_str} 호] 광명 지점 제외 요청에 따라 양식 삭제.")
+            
+            elements_to_delete.extend([
+                master_tables[0]._element.getprevious().getprevious().getprevious(),
+                master_tables[0]._element.getprevious().getprevious(),
+                master_tables[0]._element.getprevious(),
+                master_tables[0]._element,
+                master_tables[1]._element.getprevious(),
+                master_tables[1]._element
+            ])
             continue
             
-        print(f"[{branch_num_str} 지점] 병합 시작: {os.path.basename(target_file)}")
+        print(f"[{branch_num_str} 호] 파일 취합: {os.path.basename(target_file)}")
         branch_doc = Document(target_file)
         
         if len(branch_doc.tables) < 2:
-            print(f"  [경고] {branch_num_str} 지점 파일에 테이블이 2개 미만입니다.")
+            print(f"  [경고] {branch_num_str} 호 파일에 테이블이 2개 미만입니다.")
             continue
             
         branch_tables = [branch_doc.tables[0], branch_doc.tables[1]]
@@ -595,7 +617,15 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
             if "판교사옥" in p.text:
                 p.text = p.text.replace("판교사옥", "SK-P타워")
         # --- 페이지 나누기 정리 로직 시작 ---
+    for e in elements_to_delete:
+        try:
+            if e is not None and e.getparent() is not None:
+                e.getparent().remove(e)
+        except Exception:
+            pass
+
     first_title_found = False
+
     for p in master_doc.paragraphs:
         # 1. 수동 페이지 나누기(Hard Page Break) 완전 제거
         for r in p.runs:
