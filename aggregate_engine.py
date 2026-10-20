@@ -340,6 +340,13 @@ def process_and_merge(template_path, upload_dir, output_path):
             for row in list(target_tbl.findall(qn('w:tr'))):
                 target_tbl.remove(row)
                 
+            header_row = None
+            for r in source_tbl.findall(qn('w:tr')):
+                texts = [''.join(tc.itertext()).replace(' ', '').strip() for tc in r.findall(qn('w:tc'))]
+                if any('관리' in t for t in texts) or any('사무' in t for t in texts) or any('사무지원' in t for t in texts):
+                    header_row = r
+                    break
+
             if source_grid is not None:
                 new_grid = copy.deepcopy(source_grid)
                 cols = new_grid.findall(qn('w:gridCol'))
@@ -350,13 +357,6 @@ def process_and_merge(template_path, upload_dir, output_path):
                             col.set(qn('w:w'), str(int(int(cw) * scale_factor)))
                 
                 # FORCE col 0 through 8 width dynamically based on actual header row spans
-                header_row = None
-                for r in source_tbl.findall(qn('w:tr')):
-                    texts = [''.join(tc.itertext()).replace(' ', '').strip() for tc in r.findall(qn('w:tc'))]
-                    if any('관리' in t for t in texts) or any('사무' in t for t in texts) or any('사무지원' in t for t in texts):
-                        header_row = r
-                        break
-                        
                 if header_row is not None:
                     c_col = 0
                     last_fixed_col_idx = 0
@@ -450,10 +450,11 @@ def process_and_merge(template_path, upload_dir, output_path):
             if cg is not None: target_tbl.remove(cg)
             
             from docx.oxml import parse_xml
-            total_grid_cols = 10
+            is_11_col = is_gwangmyeong or (header_row is not None and len(header_row.findall(qn('w:tc'))) == 11)
+            total_grid_cols = 11 if is_11_col else 10
             
-            if is_gwangmyeong:
-                # Gwangmyeong (광명): Use 11-col grid (removed lifeguard)
+            if is_11_col:
+                # 11-col grid (Gwangmyeong or branches with 11 personnel cells like Daegu)
                 total_grid_cols = 11
                 gwang_grid_xml = (
                     '<w:tblGrid xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -1184,7 +1185,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                             
                             branch_tc = create_cell_with_span(2, parsed_lines[0][0], font_name="가는각진제목체")
                             tr_orig.append(branch_tc)
-                            content_tc = create_cell_with_span(6, parsed_lines[0][1])
+                            content_tc = create_cell_with_span(total_grid_cols - 4, parsed_lines[0][1])
                             tr_orig.append(content_tc)
                             
                             for i in range(1, len(parsed_lines)):
@@ -1273,7 +1274,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                     grid_col_widths = [567, 993, 862, 862, 862, 862, 862, 862, 862, 7574]
                     if is_seorin: # Seorin
                         grid_col_widths = [567, 993, 862, 862, 862, 862, 1633, 862, 862, 6803]
-                    elif is_gwangmyeong: # Gwangmyeong
+                    elif is_11_col: # 11-col grid (Gwangmyeong or branches with 11 personnel cells like Daegu)
                         grid_col_widths = [567, 993, 862, 862, 862, 862, 862, 862, 862, 862, 6712]
                         
                     # Ensure we don't index out of bounds

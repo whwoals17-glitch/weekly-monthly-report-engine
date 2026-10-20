@@ -281,6 +281,40 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
                         
                 branch_headers = [clean_text(c.text) for c in branch_tbl.rows[b_header_idx].cells]
 
+                # 지점 파일에 '주차' 열이 추가되어 10열이 된 경우(예: 대구사업부 등) 동적으로 열 추가 및 10열 그리드 적용
+                if "주차" in branch_headers and "주차" not in master_headers and len(master_headers) == 9:
+                    from docx.table import _Cell
+                    insert_idx = master_headers.index("미화") if "미화" in master_headers else len(master_headers) - 2
+                    for r_i, m_row in enumerate(master_tbl.rows):
+                        tcs = m_row._tr.findall(qn('w:tc'))
+                        if len(tcs) > insert_idx:
+                            new_tc = copy.deepcopy(tcs[insert_idx - 1])
+                            m_row._tr.insert(m_row._tr.index(tcs[insert_idx]), new_tc)
+                            if r_i == m_header_idx:
+                                force_font_on_cell(_Cell(new_tc, master_tbl), "주차", font_name="가는각진제목체", font_size_pt=10, alignment=WD_ALIGN_PARAGRAPH.CENTER, space_pt=0)
+
+                    ten_col_widths = [1014, 1015, 1014, 1016, 1016, 1015, 1016, 1015, 1016, 5345]
+                    tblGrid = master_tbl._tbl.find(qn('w:tblGrid'))
+                    if tblGrid is not None:
+                        for old_col in list(tblGrid.findall(qn('w:gridCol'))):
+                            tblGrid.remove(old_col)
+                        for w_val in ten_col_widths:
+                            gc_el = OxmlElement('w:gridCol')
+                            gc_el.set(qn('w:w'), str(w_val))
+                            tblGrid.append(gc_el)
+
+                    for m_row in master_tbl.rows:
+                        tcs = m_row._tr.findall(qn('w:tc'))
+                        for c_i, tc in enumerate(tcs):
+                            if c_i < len(ten_col_widths):
+                                tcPr = tc.get_or_add_tcPr()
+                                for tcW in tcPr.findall(qn('w:tcW')):
+                                    tcW.set(qn('w:w'), str(ten_col_widths[c_i]))
+                                    tcW.set(qn('w:type'), 'dxa')
+
+                    master_headers_raw = [c.text for c in master_tbl.rows[m_header_idx].cells]
+                    master_headers = [clean_text(h) for h in master_headers_raw]
+
                 # 행 높이 세팅 (헤더: 0.6cm, 데이터: 0.37cm)
                 for i in range(m_header_idx + 1):
                     set_row_height(master_tbl.rows[i], 0.6)
@@ -388,6 +422,15 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
                                             val = '0'
                                     except ValueError:
                                         val = '0'
+                                elif m_header == "사무지원":
+                                    val = '0'
+                                    for alt in ["행정", "사무", "서무"]:
+                                        if alt in branch_headers:
+                                            b_idx = branch_headers.index(alt)
+                                            v = branch_row.cells[b_idx].text.strip()
+                                            if v and v != '-':
+                                                val = v
+                                            break
                                 else:
                                     val = '0' # 못 찾으면 0 처리
                             if "보안" in m_header:
