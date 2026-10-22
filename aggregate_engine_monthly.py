@@ -78,12 +78,30 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
     master_doc = Document(template_path)
     print(f"템플릿 로드 완료: 총 {len(master_doc.tables)}개의 표 발견됨 (예상: 34개)")
 
-    # --- Dynamic Header Update from T-타워 ---
-    t_tower_file = None
+    from filename_normalizer import identify_branch, convert_doc_to_docx
+    branch_file_by_idx = {}
     for f in os.listdir(upload_folder):
-        if ('T-타워' in f or f.startswith('01')) and not f.startswith('~'):
-            t_tower_file = os.path.join(upload_folder, f)
-            break
+        if f.startswith('~'):
+            continue
+        fpath = os.path.join(upload_folder, f)
+        if fpath.lower().endswith('.doc') and not fpath.lower().endswith('.docx'):
+            try:
+                fpath = convert_doc_to_docx(fpath, remove_original=True)
+                f = os.path.basename(fpath)
+            except Exception as e:
+                print(f"[경고] 월간 .doc -> .docx 변환 실패 ({f}): {e}")
+                continue
+        b_info = identify_branch(f, fpath)
+        if b_info:
+            branch_file_by_idx[b_info["idx"]] = fpath
+
+    # --- Dynamic Header Update from T-타워 ---
+    t_tower_file = branch_file_by_idx.get(0)
+    if not t_tower_file:
+        for f in os.listdir(upload_folder):
+            if ('T-타워' in f or f.startswith('01')) and not f.startswith('~'):
+                t_tower_file = os.path.join(upload_folder, f)
+                break
             
     if t_tower_file:
         try:
@@ -202,11 +220,7 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
         
         is_gwangmyeong = '광명' in t_title
         
-        target_file = None
-        for f in os.listdir(upload_folder):
-            if f.startswith(branch_num_str) and not f.startswith('~'):
-                target_file = os.path.join(upload_folder, f)
-                break
+        target_file = branch_file_by_idx.get(idx)
                 
         if is_gwangmyeong or not target_file:
             if not target_file:

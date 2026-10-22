@@ -240,23 +240,34 @@ def process_and_merge(template_path, upload_dir, output_path):
         if trs:
             master_sec4_row_xml = copy.deepcopy(trs[-1])
 
+    from filename_normalizer import identify_branch, convert_doc_to_docx
     branch_files = {}
     for filename in os.listdir(upload_dir):
         if filename.startswith('~'): continue
-        match = re.search(r'^(\d{2})', filename)
-        if match:
-            idx = int(match.group(1)) - 1
-            if 0 <= idx <= 16:
-                filepath = os.path.join(upload_dir, filename)
-                if idx not in branch_files:
+        filepath = os.path.join(upload_dir, filename)
+        if filepath.lower().endswith('.doc') and not filepath.lower().endswith('.docx'):
+            try:
+                filepath = convert_doc_to_docx(filepath, remove_original=True)
+                filename = os.path.basename(filepath)
+            except Exception as e:
+                print(f"[경고] .doc -> .docx 변환 실패 ({filename}): {e}")
+                continue
+        b_info = identify_branch(filename, filepath)
+        idx = b_info["idx"] if b_info else None
+        if idx is None:
+            match = re.search(r'^(\d{2})', filename)
+            if match:
+                idx = int(match.group(1)) - 1
+        if idx is not None and 0 <= idx <= 16:
+            if idx not in branch_files:
+                branch_files[idx] = filepath
+            else:
+                existing = branch_files[idx].lower()
+                current = filepath.lower()
+                if current.endswith('.doc') and not current.endswith('.docx'):
                     branch_files[idx] = filepath
-                else:
-                    existing = branch_files[idx].lower()
-                    current = filepath.lower()
-                    if current.endswith('.doc') and not current.endswith('.docx'):
-                        branch_files[idx] = filepath
-                    elif current.endswith('.docx') and existing.endswith('.docx'):
-                        branch_files[idx] = filepath
+                elif current.endswith('.docx') and existing.endswith('.docx'):
+                    branch_files[idx] = filepath
 
     import subprocess
     try: subprocess.run(['taskkill', '/F', '/IM', 'WINWORD.EXE'], capture_output=True)
@@ -275,7 +286,7 @@ def process_and_merge(template_path, upload_dir, output_path):
         except:
             pass
 
-        num_tables = len(master_doc.tables)
+    num_tables = len(master_doc.tables)
     tables_to_delete = []
     for idx in range(num_tables):
         if idx not in branch_files:
