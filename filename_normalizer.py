@@ -5,9 +5,9 @@ import subprocess
 from datetime import datetime
 from docx import Document
 
-# 16개 사업소 표준 매핑 정보 (광명이 제외되면서 13~16번으로 한 칸씩 당겨짐)
-# - num: 파일명에 부여될 표준 번호 ("01" ~ "16")
-# - idx: 마스터 템플릿(00번 워드 파일) 내에서의 테이블 인덱스 (0 ~ 16, 광명 자리인 12번 인덱스는 건너뜀)
+# 15개 사업소 표준 매핑 정보 (상암 ICN10, 광명이 제외되면서 10~15번으로 당겨짐)
+# - num: 파일명에 부여될 표준 번호 ("01" ~ "15")
+# - idx: 마스터 템플릿(00번 워드 파일) 내에서의 테이블 인덱스 (0 ~ 16, 상암 ICN10 자리인 9번 및 광명 자리인 12번 인덱스는 건너뜀)
 BRANCH_DEFINITIONS = [
     {
         "num": "01",
@@ -72,51 +72,45 @@ BRANCH_DEFINITIONS = [
         "std_name_monthly": "판교",
         "keywords": ["sk-p", "skp", "판교사옥", "판교"], # 주의: '판교테크원'을 먼저 체크해야 함!
     },
+    # (구 10번 상암 ICN10 제외 -> 뒷번호 10~15번으로 당김)
     {
         "num": "10",
-        "idx": 9,
-        "std_name_weekly": "상암 ICN10",
-        "std_name_monthly": "상암 ICN10",
-        "keywords": ["상암", "icn10", "icn 10", "디지털리얼티", "디지털 리얼티"],
-    },
-    {
-        "num": "11",
         "idx": 10,
         "std_name_weekly": "종로타워",
         "std_name_monthly": "종로타워",
         "keywords": ["종로타워", "종로"],
     },
     {
-        "num": "12",
+        "num": "11",
         "idx": 11,
         "std_name_weekly": "삼화타워",
         "std_name_monthly": "삼화타워",
         "keywords": ["삼화타워", "삼화"], # 주의: '삼화2호'(02번)를 먼저 체크해야 함!
     },
-    # (구 13번 광명 제외 -> 뒷번호 13~16번으로 한 칸씩 당김)
+    # (구 13번 광명 제외)
     {
-        "num": "13",
+        "num": "12",
         "idx": 13,
         "std_name_weekly": "KT&G세종",
         "std_name_monthly": "KT&G세종공장",
         "keywords": ["kt&g", "ktg", "세종공장", "세종"],
     },
     {
-        "num": "14",
+        "num": "13",
         "idx": 14,
         "std_name_weekly": "판교테크원",
         "std_name_monthly": "판교 테크원",
         "keywords": ["판교테크원", "판교 테크원", "테크원"],
     },
     {
-        "num": "15",
+        "num": "14",
         "idx": 15,
         "std_name_weekly": "SK무의연수원",
         "std_name_monthly": "SK무의연수원",
         "keywords": ["무의연수원", "sk무의", "무의"],
     },
     {
-        "num": "16",
+        "num": "15",
         "idx": 16,
         "std_name_weekly": "인재개발원",
         "std_name_monthly": "인재개발원",
@@ -124,17 +118,16 @@ BRANCH_DEFINITIONS = [
     },
 ]
 
-# 우선순위 매칭 순서 (더 구체적인 키워드를 가진 사업소를 먼저 검사: 14 판교테크원 -> 09 판교, 02 삼화2호 -> 12 삼화타워 등)
+# 우선순위 매칭 순서 (더 구체적인 키워드를 가진 사업소를 먼저 검사: 13 판교테크원 -> 09 판교, 02 삼화2호 -> 11 삼화타워 등)
 MATCH_PRIORITY_ORDER = [
-    "14", # 판교테크원 ('판교'보다 먼저)
+    "13", # 판교테크원 ('판교'보다 먼저)
     "02", # 수2 / 삼화2호 ('삼화'보다 먼저)
     "01", # T-타워
-    "10", # 상암 ICN10
-    "11", # 종로타워
-    "12", # 삼화타워
-    "13", # KT&G세종
-    "15", # SK무의연수원
-    "16", # 인재개발원
+    "10", # 종로타워
+    "11", # 삼화타워
+    "12", # KT&G세종
+    "14", # SK무의연수원
+    "15", # 인재개발원
     "03", # 중부
     "04", # 부산
     "05", # 대구
@@ -222,17 +215,29 @@ def convert_doc_to_docx(doc_path, target_docx_path=None, remove_original=True):
         pythoncom.CoUninitialize()
 
 
+EXCLUDED_KEYWORDS = [
+    "상암", "icn10", "icn 10", "디지털리얼티", "디지털 리얼티",
+    "광명", "u-플래닛", "u플래닛", "유타워", "u타워", "아이벡스",
+]
+
+
+def _is_excluded_text(text):
+    if not text:
+        return False
+    norm = text.lower().replace(" ", "").replace("_", "").replace("-", "")
+    norm_with_hyphen = text.lower().replace(" ", "")
+    for ex_kw in EXCLUDED_KEYWORDS:
+        if ex_kw in norm_with_hyphen or ex_kw.replace("-", "") in norm:
+            return True
+    return False
+
+
 def _match_branch_from_text(text):
     """주어진 텍스트에서 우선순위에 따라 사업소 정보를 찾아 반환합니다."""
-    if not text:
+    if not text or _is_excluded_text(text):
         return None
     norm = text.lower().replace(" ", "").replace("_", "").replace("-", "")
     norm_with_hyphen = text.lower().replace(" ", "")
-
-    # 광명 파일이 혹시 들어오면 제외 처리될 수 있도록 None 반환 전에 체크
-    for gw_kw in ["광명", "u-플래닛", "u플래닛", "유타워", "u타워", "아이벡스"]:
-        if gw_kw in norm_with_hyphen or gw_kw.replace("-", "") in norm:
-            return None
 
     for num in MATCH_PRIORITY_ORDER:
         b = BRANCH_BY_NUM[num]
@@ -307,8 +312,8 @@ def identify_branch(filename, filepath=None):
     """
     base = os.path.splitext(os.path.basename(filename))[0]
 
-    # 통합본/템플릿 파일(00번 또는 '작성예정', '작성완료', '종합', '통합')은 제외
-    if base.startswith("00") or any(w in base for w in ["작성예정", "작성완료", "최종결과", "통합_작성완료", "- 종합"]):
+    # 통합본/템플릿 파일(00번 또는 '작성예정', '작성완료', '종합', '통합') 또는 제외 사업소(ICN10, 광명)는 즉시 제외
+    if base.startswith("00") or any(w in base for w in ["작성예정", "작성완료", "최종결과", "통합_작성완료", "- 종합"]) or _is_excluded_text(base):
         return None
 
     # 1단계: 파일명에서 사업소 키워드 검색 (가장 정확)
@@ -322,17 +327,22 @@ def identify_branch(filename, filepath=None):
             doc = Document(filepath)
             if doc.tables and len(doc.tables[0].rows) > 0:
                 header_text = doc.tables[0].rows[0].cells[0].text.strip()
+                if _is_excluded_text(header_text):
+                    return None
                 branch = _match_branch_from_text(header_text)
                 if branch:
                     return branch
             for p in doc.paragraphs[:5]:
-                branch = _match_branch_from_text(p.text.strip())
+                p_txt = p.text.strip()
+                if _is_excluded_text(p_txt):
+                    return None
+                branch = _match_branch_from_text(p_txt)
                 if branch:
                     return branch
         except Exception:
             pass
 
-    # 3단계: 그래도 못 찾았을 때만 파일명 맨 앞 2자리 숫자(01~16) 참고
+    # 3단계: 그래도 못 찾았을 때만 파일명 맨 앞 2자리 숫자(01~15) 참고
     m_num = re.match(r'^(\d{2})', base.strip())
     if m_num and m_num.group(1) in BRANCH_BY_NUM:
         return BRANCH_BY_NUM[m_num.group(1)]
@@ -372,7 +382,7 @@ def normalize_filename(filename, filepath=None, force_report_type=None, force_da
 
 def batch_rename_in_folder(folder_path, unify_date=True, target_date=None, dry_run=False, convert_doc=True):
     """
-    지정된 폴더 내의 제각각인 보고서 파일들을 스캔하여 표준 파일명(01~16번)으로 일괄 변경합니다.
+    지정된 폴더 내의 제각각인 보고서 파일들을 스캔하여 표준 파일명(01~15번)으로 일괄 변경합니다.
     convert_doc=True(기본값)이면 삼화타워, 판교 등의 구형 .doc 파일을 자동으로 .docx로 변환합니다.
     """
     if not os.path.isdir(folder_path):
@@ -451,9 +461,9 @@ def batch_rename_in_folder(folder_path, unify_date=True, target_date=None, dry_r
                 "old_name": item["old_name"],
                 "new_name": item["old_name"],
                 "branch_num": "제외/미인식",
-                "branch_name": "광명 또는 미인식",
+                "branch_name": "ICN10/광명 또는 미인식",
                 "status": "skipped",
-                "message": "제외 대상(광명) 또는 사업소 미인식",
+                "message": "제외 대상(ICN10·광명) 또는 사업소 미인식",
             })
             continue
 

@@ -81,9 +81,13 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
     from filename_normalizer import identify_branch, convert_doc_to_docx
     branch_file_by_idx = {}
     for f in os.listdir(upload_folder):
-        if f.startswith('~'):
+        if f.startswith('~') or f.startswith('.'):
+            continue
+        if not f.lower().endswith(('.docx', '.doc')):
             continue
         fpath = os.path.join(upload_folder, f)
+        if not os.path.isfile(fpath):
+            continue
         if fpath.lower().endswith('.doc') and not fpath.lower().endswith('.docx'):
             try:
                 fpath = convert_doc_to_docx(fpath, remove_original=True)
@@ -219,14 +223,15 @@ def process_and_merge_monthly(template_path, upload_folder, output_path):
         t_title = ''.join(t_title_elem.itertext()) if t_title_elem is not None else ""
         
         is_gwangmyeong = '광명' in t_title
+        is_icn10 = 'ICN10' in t_title or '상암' in t_title or '디지털 리얼티' in t_title
         
         target_file = branch_file_by_idx.get(idx)
                 
-        if is_gwangmyeong or not target_file:
+        if is_gwangmyeong or is_icn10 or not target_file:
             if not target_file:
                 print(f"[{branch_num_str} 호] 파일 없음. 양식 삭제.")
             else:
-                print(f"[{branch_num_str} 호] 광명 지점 제외 요청에 따라 양식 삭제.")
+                print(f"[{branch_num_str} 호] 제외 사업장(ICN10/광명) 요청에 따라 양식 삭제.")
             
             elements_to_delete.extend([
                 master_tables[0]._element.getprevious().getprevious().getprevious(),

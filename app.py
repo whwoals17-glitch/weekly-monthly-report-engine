@@ -1,8 +1,9 @@
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for, jsonify
 import os, time, subprocess, gc, zipfile, io
+from datetime import datetime
 from aggregate_engine import process_and_merge
 from aggregate_engine_monthly import process_and_merge_monthly
-from filename_normalizer import normalize_filename, batch_rename_in_folder, convert_doc_to_docx, BRANCH_DEFINITIONS
+from filename_normalizer import normalize_filename, batch_rename_in_folder, convert_doc_to_docx, extract_date_from_filename_or_doc, BRANCH_DEFINITIONS
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_antigravity_key'
@@ -34,6 +35,31 @@ def clean_uploads():
 
 import traceback
 from werkzeug.exceptions import HTTPException
+
+def get_merged_download_name(report_type, upload_folder=UPLOAD_FOLDER):
+    """업로드된 파일들의 날짜(다수결 기준)를 반영해 표준 취합 파일명을 생성합니다."""
+    detected_dates = []
+    if os.path.isdir(upload_folder):
+        for fname in os.listdir(upload_folder):
+            if fname.startswith('~') or not fname.lower().endswith(('.docx', '.doc')):
+                continue
+            fpath = os.path.join(upload_folder, fname)
+            dt = extract_date_from_filename_or_doc(fname, fpath)
+            if dt and len(dt) == 8 and dt.isdigit():
+                detected_dates.append(dt)
+
+    if detected_dates:
+        counts = {}
+        for d in detected_dates:
+            counts[d] = counts.get(d, 0) + 1
+        date_str = sorted(counts.keys(), key=lambda x: (counts[x], x), reverse=True)[0]
+    else:
+        date_str = datetime.now().strftime('%Y%m%d')
+
+    if report_type == 'monthly':
+        return f"00.월간 업무 보고(대표이사님 보고용)_{date_str} - 종합.docx"
+    return f"00. 주간경영회의({date_str})_종합.docx"
+
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -98,16 +124,17 @@ def index():
         time.sleep(1)
             
         try:
-            expected = {f"{i:02d}" for i in range(1, 17)}
+            expected = {f"{i:02d}" for i in range(1, 16)}
             uploaded = set(f[:2] for f in os.listdir(UPLOAD_FOLDER) if not f.startswith('~') and f[:2].isdigit())
             missing = expected - uploaded
             
+            download_name = get_merged_download_name(report_type, UPLOAD_FOLDER)
             if report_type == 'monthly':
                 process_and_merge_monthly(TEMPLATE_FILE_MONTHLY, UPLOAD_FOLDER, OUTPUT_FILE_MONTHLY)
-                return send_file(OUTPUT_FILE_MONTHLY, as_attachment=True, download_name="00. 월간보고서_통합_작성완료.docx")
+                return send_file(OUTPUT_FILE_MONTHLY, as_attachment=True, download_name=download_name)
             else:
                 process_and_merge(TEMPLATE_FILE, UPLOAD_FOLDER, OUTPUT_FILE)
-                return send_file(OUTPUT_FILE, as_attachment=True, download_name="00. 주간경영회의_통합_작성완료.docx")
+                return send_file(OUTPUT_FILE, as_attachment=True, download_name=download_name)
         except Exception as e:
             flash(f"처리 중 오류 발생: {str(e)}", "danger")
             return redirect(request.url)
@@ -167,20 +194,91 @@ def api_rename_local_folder():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route('/api/list_dirs', methods=['POST'])
+def api_list_dirs():
+    """브라우저 내 폴더 탐색기 모달을 위해 지정 경로의 하위 폴더 목록과 바로가기를 반환합니다."""
+    import string
+    data = request.get_json(force=True, silent=True) or {}
+    req_path = (data.get('path') or '').strip()
+
+    home = os.path.expanduser('~')
+    desktop = os.path.join(home, 'Desktop')
+    downloads = os.path.join(home, 'Downloads')
+    documents = os.path.join(home, 'Documents')
+
+    shortcuts = []
+    for label, p in [
+        ('🖥️ 바탕화면', desktop),
+        ('⬇️ 다운로드', downloads),
+        ('📄 문서', documents),
+        ('📁 프로그램 폴더', BASE_DIR),
+    ]:
+        if os.path.isdir(p):
+            shortcuts.append({'label': label, 'path': os.path.normpath(p)})
+
+    drives = []
+    for letter in string.ascii_uppercase:
+        d = f"{letter}:\\"
+        if os.path.isdir(d):
+            drives.append({'label': f"💾 {letter}:", 'path': d})
+
+    if not req_path:
+        target = desktop if os.path.isdir(desktop) else home
+    else:
+        target = os.path.normpath(req_path)
+
+    if not os.path.isdir(target):
+        return jsonify({
+            "ok": False,
+            "error": f"폴더를 찾을 수 없습니다: {target}",
+            "shortcuts": shortcuts,
+            "drives": drives,
+        }), 400
+
+    dirs = []
+    doc_count = 0
+    try:
+        with os.scandir(target) as it:
+            for entry in it:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        if entry.name.startswith('.') or entry.name.startswith('$'):
+                            continue
+                        dirs.append({'name': entry.name, 'path': os.path.normpath(entry.path)})
+                    elif entry.is_file(follow_symlinks=False):
+                        low = entry.name.lower()
+                        if not entry.name.startswith('~') and (low.endswith('.docx') or low.endswith('.doc')):
+                            doc_count += 1
+                except OSError:
+                    continue
+    except PermissionError:
+        return jsonify({
+            "ok": False,
+            "error": f"접근 권한이 없는 폴더입니다: {target}",
+            "shortcuts": shortcuts,
+            "drives": drives,
+        }), 403
+
+    dirs.sort(key=lambda x: x['name'].lower())
+    parent = os.path.dirname(target)
+    if parent == target:
+        parent = ''
+
+    return jsonify({
+        "ok": True,
+        "current_path": target,
+        "parent_path": parent,
+        "dirs": dirs,
+        "doc_count": doc_count,
+        "shortcuts": shortcuts,
+        "drives": drives,
+    })
+
+
 @app.route('/api/browse_folder', methods=['POST'])
 def api_browse_folder():
-    """윈도우 폴더 선택 대화상자를 띄워 선택된 경로를 반환합니다."""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        folder_selected = filedialog.askdirectory(title="파일명을 일괄 변경할 폴더를 선택하세요")
-        root.destroy()
-        return jsonify({"ok": True, "folder_path": folder_selected})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    """하위 호환용 엔드포인트 (웹 내 폴더 탐색기 사용 권장)."""
+    return api_list_dirs()
 
 
 @app.route('/rename_zip', methods=['POST'])
@@ -219,10 +317,11 @@ def rename_zip():
 @app.route('/download')
 def download():
     rtype = request.args.get('type', 'weekly')
+    download_name = get_merged_download_name(rtype, UPLOAD_FOLDER)
     if rtype == 'monthly':
-        response = send_file(OUTPUT_FILE_MONTHLY, as_attachment=True, download_name="00. 월간경영회의_최종_작성완료.docx")
+        response = send_file(OUTPUT_FILE_MONTHLY, as_attachment=True, download_name=download_name)
     else:
-        response = send_file(OUTPUT_FILE, as_attachment=True, download_name="00. 주간경영회의_최종_작성완료.docx")
+        response = send_file(OUTPUT_FILE, as_attachment=True, download_name=download_name)
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"

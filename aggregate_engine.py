@@ -243,8 +243,10 @@ def process_and_merge(template_path, upload_dir, output_path):
     from filename_normalizer import identify_branch, convert_doc_to_docx
     branch_files = {}
     for filename in os.listdir(upload_dir):
-        if filename.startswith('~'): continue
+        if filename.startswith('~') or filename.startswith('.'): continue
+        if not filename.lower().endswith(('.docx', '.doc')): continue
         filepath = os.path.join(upload_dir, filename)
+        if not os.path.isfile(filepath): continue
         if filepath.lower().endswith('.doc') and not filepath.lower().endswith('.docx'):
             try:
                 filepath = convert_doc_to_docx(filepath, remove_original=True)
@@ -254,10 +256,6 @@ def process_and_merge(template_path, upload_dir, output_path):
                 continue
         b_info = identify_branch(filename, filepath)
         idx = b_info["idx"] if b_info else None
-        if idx is None:
-            match = re.search(r'^(\d{2})', filename)
-            if match:
-                idx = int(match.group(1)) - 1
         if idx is not None and 0 <= idx <= 16:
             if idx not in branch_files:
                 branch_files[idx] = filepath
@@ -306,9 +304,10 @@ def process_and_merge(template_path, upload_dir, output_path):
             temp_wrapper = Table(target_tbl, master_doc)
             t_title = temp_wrapper.rows[0].cells[0].text if len(temp_wrapper.rows) > 0 else ""
             is_gwangmyeong = '광명' in t_title
+            is_icn10 = 'ICN10' in t_title or '상암' in t_title or '디지털 리얼티' in t_title
             
-            # 사용자 요청에 따라 광명 지점 양식은 항상 통째로 삭제
-            if is_gwangmyeong:
+            # 사용자 요청에 따라 상암 ICN10 및 광명 지점 양식은 항상 통째로 삭제
+            if is_gwangmyeong or is_icn10:
                 if master_doc.tables[idx] not in tables_to_delete:
                     tables_to_delete.append(master_doc.tables[idx])
                 continue
@@ -989,7 +988,7 @@ def process_and_merge(template_path, upload_dir, output_path):
                         text = re.sub(r'(?m)^\s*안전관리\s*\n?', '', text)
 
                     # Calculate dynamic margin for "4. 안전문화활동"
-                    custom_space_pt = 8 if current_cat_num == 4 else 3
+                    custom_space_pt = 0 if current_cat_num == 4 else 3
 
                     # Apply text cleanly without any bold (Rule 2, 3)
                     force_font_on_cell(cell, text, font_name="가는각진제목체", font_size_pt=10, is_bold=False, alignment=align, space_pt=custom_space_pt)
