@@ -652,10 +652,27 @@
             });
         }
 
+        const IS_CLOUD = {{ 'true' if is_cloud else 'false' }};
+        let selectedDirHandle = null;
         let modalCurrentPath = '';
         let modalParentPath = '';
 
-        function browseLocalFolder() {
+        async function browseLocalFolder() {
+            if (IS_CLOUD) {
+                if (!window.showDirectoryPicker) {
+                    alert('현재 브라우저에서는 웹에서 직접 폴더 선택을 지원하지 않습니다.\nChrome 또는 Edge 브라우저를 사용하거나, 아래 [방법 2. 드래그 앤 드롭]을 이용해 주세요.');
+                    return;
+                }
+                try {
+                    selectedDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    document.getElementById('local-folder-input').value = `📂 ${selectedDirHandle.name} (내 PC 폴더 선택됨)`;
+                    runLocalRename(true);
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return;
+                    alert('폴더 선택 중 오류가 발생했습니다: ' + e.message);
+                }
+                return;
+            }
             const initial = document.getElementById('local-folder-input').value.trim();
             document.getElementById('folder-modal-backdrop').classList.add('open');
             loadFolderModal(initial);
@@ -750,6 +767,88 @@
             const folderPath = document.getElementById('local-folder-input').value.trim();
             const targetDate = document.getElementById('local-target-date').value.trim();
             const resultBox = document.getElementById('local-rename-result');
+
+            if (IS_CLOUD) {
+                if (!selectedDirHandle) {
+                    alert('먼저 [📂 폴더 찾아보기] 버튼을 눌러 내 PC의 폴더를 선택해주세요!');
+                    return;
+                }
+                resultBox.style.display = 'block';
+                resultBox.innerHTML = dryRun ? '⏳ 폴더 내 파일을 분석 중입니다...' : '⏳ 폴더 내 파일명을 변경하는 중입니다...';
+
+                try {
+                    const fileHandles = {};
+                    const filenames = [];
+                    for await (const [name, handle] of selectedDirHandle.entries()) {
+                        if (handle.kind === 'file' && !name.startsWith('~') && /\.(docx|doc)$/i.test(name)) {
+                            fileHandles[name] = handle;
+                            filenames.push(name);
+                        }
+                    }
+
+                    if (filenames.length === 0) {
+                        resultBox.innerHTML = `<div style="color:#64748B;">해당 폴더에 변경할 워드(.docx, .doc) 파일이 없습니다.</div>`;
+                        return;
+                    }
+
+                    const res = await fetch('/api/preview_rename', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filenames, target_date: targetDate || null })
+                    });
+                    const data = await res.json();
+
+                    const displayResults = [];
+                    for (const r of data.results) {
+                        let statusMsg = '';
+                        if (!r.recognized) {
+                            statusMsg = '미인식 (변경 안함)';
+                        } else if (!r.changed) {
+                            statusMsg = '변경 불필요 (이미 표준명)';
+                        } else if (dryRun) {
+                            statusMsg = '변경 예정';
+                        } else {
+                            try {
+                                const fh = fileHandles[r.old_name];
+                                if (typeof fh.move === 'function') {
+                                    await fh.move(r.new_name);
+                                } else {
+                                    const f = await fh.getFile();
+                                    const newFh = await selectedDirHandle.getFileHandle(r.new_name, { create: true });
+                                    const w = await newFh.createWritable();
+                                    await w.write(await f.arrayBuffer());
+                                    await w.close();
+                                    await selectedDirHandle.removeEntry(r.old_name);
+                                }
+                                statusMsg = '✅ 변경 완료';
+                            } catch (err) {
+                                statusMsg = `❌ 실패 (${err.message})`;
+                            }
+                        }
+                        displayResults.push({ ...r, message: statusMsg });
+                    }
+
+                    const titleMsg = dryRun
+                        ? `🔍 <strong>변경 미리보기</strong> (총 ${displayResults.length}개 파일 감지됨 - 아직 변경 전입니다)`
+                        : `✅ <strong>폴더 내 파일명 일괄 변경 완료!</strong> (총 ${displayResults.length}개 파일 처리됨)`;
+                    let html = `<div style="margin-bottom:0.6rem; color:#1E293B;">${titleMsg}</div>`;
+                    html += `<table class="preview-table"><thead><tr><th>순번</th><th>기존 파일명</th><th>표준 파일명</th><th>상태</th></tr></thead><tbody>`;
+                    for (const r of displayResults) {
+                        const badge = r.branch_num !== '??' ? `<span class="badge-ok">${r.branch_num}번</span>` : `<span class="badge-warn">미인식</span>`;
+                        html += `<tr>
+                            <td>${badge}</td>
+                            <td style="color:#64748B;">${r.old_name}</td>
+                            <td style="font-weight:600; color:#D97706;">${r.new_name}</td>
+                            <td>${r.message}</td>
+                        </tr>`;
+                    }
+                    html += `</tbody></table>`;
+                    resultBox.innerHTML = html;
+                } catch (e) {
+                    resultBox.innerHTML = `<div style="color:#9B1C1C;">요청 중 오류가 발생했습니다: ${e}</div>`;
+                }
+                return;
+            }
 
             if (!folderPath) {
                 alert('먼저 파일들이 들어있는 폴더 경로를 선택하거나 입력해주세요!');

@@ -139,7 +139,8 @@ def index():
             flash(f"처리 중 오류 발생: {str(e)}", "danger")
             return redirect(request.url)
 
-    return render_template('index.html', download_ready=False, active_tab=None, branches=BRANCH_DEFINITIONS)
+    is_cloud = bool(os.environ.get('VERCEL') or os.name != 'nt')
+    return render_template('index.html', download_ready=False, active_tab=None, branches=BRANCH_DEFINITIONS, is_cloud=is_cloud)
 
 
 @app.route('/api/preview_rename', methods=['POST'])
